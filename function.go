@@ -1,28 +1,35 @@
 package main
 
 import (
-	"fmt"
 	"image"
+	"sync"
 
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/pixelgl"
 )
 
+var mutex sync.Mutex
+var wg sync.WaitGroup
+
 func FindCoordAround(nbDimentions int, nbAround int) *[][]int {
 	find := make([][]int, 0)
 	for i := 1; i <= nbDimentions; i++ {
-		GetNCoordDifferent(nbDimentions, i, nbAround, &find)
+		wg.Add(1)
+		go GetNCoordDifferent(nbDimentions, i, nbAround, &find)
 	}
+	wg.Wait()
 	return &find
 }
 
 func GetNCoordDifferent(nbDimentions int, nbDifferent int, nbAround int, find *[][]int) {
+	defer wg.Done()
 	coord := make([]int, nbDifferent)
 	for i := 0; i < nbDifferent; i++ {
 		coord[i] = -nbAround + i
 	}
-	GetCompletVariationOfCoord(nbDimentions, find, &coord)
-
+	mutex.Lock()
+	wg.Add(1)
+	go GetCompletVariationOfCoord(nbDimentions, find, &coord)
 	for ;;{
 		modified := false
 		cursor := len(coord)-1
@@ -44,47 +51,58 @@ func GetNCoordDifferent(nbDimentions int, nbDifferent int, nbAround int, find *[
 				cursor--
 			}
 		}
-		GetCompletVariationOfCoord(nbDimentions, find, &coord)
+		mutex.Lock()
+		wg.Add(1)
+		go GetCompletVariationOfCoord(nbDimentions, find, &coord)
 	}
 }
 
-func GetCompletVariationOfCoord(nbDimentions int, find *[][]int, partialCoord *[]int) {
+func GetCompletVariationOfCoord(nbDimentions int, find *[][]int, ogPartialCoord *[]int) {
+	defer wg.Done()
+	partialCoord := make([]int, len(*ogPartialCoord))
+	copy(partialCoord, *ogPartialCoord)
+	mutex.Unlock()
 	coord := make([]int, nbDimentions)
 	for i := 0; i < nbDimentions; i++ {
-		if i < len(*partialCoord) {
-			coord[i] = (*partialCoord)[i]
+		if i < len(partialCoord) {
+			coord[i] = partialCoord[i]
 		} else {
-			coord[i] = (*partialCoord)[0]
+			coord[i] = partialCoord[0]
 		}
 	}
-	getPermutationOfCoord(find, &coord)
+	mutex.Lock()
+	wg.Add(1)
+	go getPermutationOfCoord(find, &coord)
 	for ;;{
 		modified := false
 		cursor := len(coord)-1
 		for ;!modified; {
-			if cursor == len(*partialCoord) -1{
+			if cursor == len(partialCoord) -1{
 				return
 			}
-			if coord[cursor] != (*partialCoord)[len(*partialCoord)-1] {
+			if coord[cursor] != partialCoord[len(partialCoord)-1] {
 				modified = true
 				afterCursor := 0
-				for ;afterCursor < len(*partialCoord) && coord[cursor] != (*partialCoord)[afterCursor]; {
+				for ;afterCursor < len(partialCoord) && coord[cursor] != partialCoord[afterCursor]; {
 					afterCursor++
 				}
 				afterCursor++
 				for ;cursor < len(coord); {
-					coord[cursor] = (*partialCoord)[afterCursor]
+					coord[cursor] = partialCoord[afterCursor]
 					cursor ++
 				}
 			} else {
 				cursor--
 			}
 		}
-		getPermutationOfCoord(find, &coord)
+		mutex.Lock()
+		wg.Add(1)
+		go getPermutationOfCoord(find, &coord)
 	}
 }
 
 func getPermutationOfCoord(find *[][]int, coord *[]int) {
+	defer wg.Done()
 	//https://stackoverflow.com/questions/30226438/generate-all-permutations-in-go
 	var helper func([]int, int)
 	tempFind := make([][]int, 0)
@@ -112,6 +130,7 @@ func getPermutationOfCoord(find *[][]int, coord *[]int) {
 	}
 	tcoord := make([]int, len(*coord))
 	copy(tcoord, *coord)
+	mutex.Unlock()
 	helper(tcoord, len(tcoord))
 	*find = append(*find, tempFind...)
 }
@@ -135,19 +154,76 @@ func getCursorPosition(win *pixelgl.Window) (int,int) {
 }
 
 func drawPixel(img *image.RGBA, x int, y int) {
-	fmt.Println("début de la fonction drawPixel")
-	drawAtDist := func(dist int, x int, y int, color float64) {
-		for i := 0; i < 2*dist+1; i++ {
-			img.Set(x-dist+i, y-dist, pixel.RGB(color, color, color))
-			img.Set(x-dist, y-dist+i, pixel.RGB(color, color, color))
-			img.Set(x+dist-i, y+dist, pixel.RGB(color, color, color))
-			img.Set(x+dist, y+dist-i, pixel.RGB(color, color, color))
+
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 5; j++ {
+			c := 126 - (127 * (float64(i) + float64(j)) / 5)
+			addColor(img, x+i, y+j, c)
+			addColor(img, x-i, y+j, c)
+			addColor(img, x+i, y-j, c)
+			addColor(img, x-i, y-j, c)
 		}
 	}
+}
 
-	for i := 1; i < 10; i++ {
-		c := 255*float64(i)/9
-		fmt.Println(c,9-i)
-		drawAtDist(9-i, x, y, c)
+func addColor(img *image.RGBA, x int, y int, c float64) {
+	if x < 0 || y < 0 || x >= img.Bounds().Max.X || y >= img.Bounds().Max.Y {
+		return
 	}
+	oldC := img.RGBAAt(x, y)
+	c = c + float64(oldC.R)
+	if c > 255 {
+		c = 255
+	}
+	img.Set(x, y, pixel.RGB(c, c, c))
+}
+
+func imgToPoint(img *image.RGBA) *Point {
+	point := Point{}
+	for y := 0; y < 28; y++ {
+		for x := 0; x < 28; x++ {
+			point.coord = append(point.coord, getValueOfPoint(img, x*10, y*10))
+		}
+	}
+	return &point
+}
+
+func getValueOfPoint(img *image.RGBA, x int,y int) float64 {
+	c := float64(0)
+	for i:=0; i<10; i++ {
+		for j:=0; j<10; j++ {
+			c += float64(img.RGBAAt(x+i, y+j).R)
+		}
+	}
+	return c/100
+}
+
+func FindCoordAround2(nbDimentions int, nbAround int) *[][]int {
+	find := make([][]int, 0)
+	coord := make([]int,nbDimentions)
+	for i:=0; i<nbDimentions; i++ {
+		coord[i] = -nbAround;
+	}
+	wg.Add(1)
+	go recFunc(coord,nbAround,nbDimentions-1,&find)
+	wg.Wait()
+	return &find;
+}
+
+func recFunc(coord []int, nbAround int, idx int, find *[][]int) {
+	defer wg.Done()
+
+	for i:= 0; i<=idx; i++ {
+		coord[i] += 1
+		if coord[i] <= nbAround {
+			wg.Add(1)
+			tcoord := make([]int, len(coord))
+			copy(tcoord, coord)
+			go recFunc(tcoord,nbAround,i,find)
+		}
+		coord[i] -= 1
+	}
+	mutex.Lock()
+	*find = append(*find, coord)
+	mutex.Unlock()
 }

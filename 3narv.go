@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -14,6 +15,7 @@ type Nnnarv struct {
 }
 
 func (n *Nnnarv) Init(nbSubDiv int, nbDimentions int, minCoord float64, maxCoord float64) {
+	fmt.Println("")
 	n.nbSubDiv = nbSubDiv
 	n.nbDimentions = nbDimentions
 	n.minCoord = minCoord
@@ -32,7 +34,7 @@ func (n *Nnnarv) AddPoint(p Point) {
 
 func (n *Nnnarv) GetSubSapceAround(coord []float64, distance int) []SubSpace {
 	subSpace := make([]SubSpace, 0)
-	sbCoord := FindCoordAround(n.nbDimentions, distance)
+	sbCoord := FindCoordAround2(n.nbDimentions, distance)
 	for i := 0; i < len(*sbCoord); i++ {
 		tCoord, error := n.ApplySubSpaceCoord(coord, (*sbCoord)[i])
 		if error {
@@ -98,7 +100,7 @@ func (n *Nnnarv) getNNearestPoint(coord []float64, nbNearest int) ([]Point, []fl
 	}
 	return selected, dist
 }
-/*
+
 func (n *Nnnarv) GetValueOfPoint(coord []float64, nbNearest int) []float64 {
 	points, dists := n.getNNearestPoint(coord, nbNearest)
 	ttPart := float64(0)
@@ -118,7 +120,7 @@ func (n *Nnnarv) GetValueOfPoint(coord []float64, nbNearest int) []float64 {
 	}
 	return res
 }
-*/
+/*
 func (n *Nnnarv) GetValueOfPoint(coord []float64, nbNearest int) string {
 	points, dists := n.getNNearestPoint(coord, nbNearest)
 
@@ -140,4 +142,4 @@ func (n *Nnnarv) GetValueOfPoint(coord []float64, nbNearest int) string {
 		}
 	}
 	return res
-}
+}*/
